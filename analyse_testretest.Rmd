@@ -1,0 +1,978 @@
+---
+title: "Analyse test-retest data"
+output: html_notebook
+---
+
+Load in the relevant libraries
+
+```{r}
+library('tidyverse')
+library('irr')
+library('hBayesDM')
+library('hausekeep') #for ezddm
+library('patchwork')
+library('faux') #for sample size sim at end
+library('effsize')
+
+workingdir='C:/Users/apike/OneDrive - University College London/Supervision/Katrina/open_data_and_code/'
+```
+
+Load data
+```{r}
+data<-read_csv(paste0(workingdir,'dataset.csv'))
+```
+Characterise participants
+
+```{r}
+data%>%
+  select(age,prolific_score,phq8_score,gad7_score,gap)%>%
+  summarise(across(everything(),list(mean=mean,sd=sd)))
+
+sum(data$Sex=='Female')
+```
+Mark bad participants
+
+```{r}
+data<-data%>%
+  mutate(bad_participants=case_when(
+    p_big_big_1 < 0.5 ~ 1,
+    p_big_big_2 < 0.5 ~ 1,
+    p_big_small_1 > 0.5 ~ 1,
+    p_big_small_2 > 0.5 ~ 1,
+    TRUE ~ 0))
+
+```
+
+
+Plot data
+
+```{r}
+data%>%
+  select(id,contains('p_big_'),-c('p_big_1','p_big_2'))%>%
+  pivot_longer(cols=-c('id'))%>%
+  separate(name,into=c('measure','time'),sep=-1)%>%
+  ggplot(aes(x=measure,y=value,fill=time))+
+  geom_bar(position='dodge',stat='summary',fun='mean')+
+  theme_classic()
+
+
+data%>%
+  select(id,contains(c('gtw','gta','ngtw','ngta')))%>%
+  pivot_longer(cols=-c('id'))%>%
+  separate(name,into=c('measure','time'),sep=-1)%>%
+  mutate(measure=factor(measure,levels=c('gtw_','ngtw_','gta_','ngta_')))%>%
+  ggplot(aes(x=measure,y=value,fill=time))+
+  geom_bar(position='dodge',stat='summary',fun='mean')+
+  theme_classic()
+
+
+```
+Get ICCs for go/nogo
+
+```{r}
+#go to win
+cor_gtw<-cor.test(data$gtw_1,data$gtw_2)
+cor_gtw
+
+icc_a1_gtw<-icc(cbind(data$gtw_1,data$gtw_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_gtw)
+
+icc_c1_gtw<-icc(cbind(data$gtw_1,data$gtw_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_gtw)
+
+
+#nogo to win
+cor_ngtw<-cor.test(data$ngtw_1,data$ngtw_2)
+cor_ngtw
+
+icc_a1_ngtw<-icc(cbind(data$ngtw_1,data$ngtw_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_ngtw)
+
+icc_c1_ngtw<-icc(cbind(data$ngtw_1,data$ngtw_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_ngtw)
+
+#go to avoid
+cor_gta<-cor.test(data$gta_1,data$gta_2)
+cor_gta
+
+icc_a1_gta<-icc(cbind(data$gta_1,data$gta_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_gta)
+
+icc_c1_gta<-icc(cbind(data$gta_1,data$gta_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_gta)
+
+
+#nogo to avoid
+cor_ngta<-cor.test(data$ngta_1,data$ngta_2)
+cor_ngta
+
+icc_a1_ngta<-icc(cbind(data$ngta_1,data$ngta_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_ngta)
+
+icc_c1_ngta<-icc(cbind(data$ngta_1,data$ngta_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_ngta)
+
+```
+
+Get ICCs for circles
+
+```{r}
+#go to win
+cor_pmidhigh<-cor.test(data$p_big_medium_1,data$p_big_medium_2)
+cor_pmidhigh
+
+icc_a1_pmidhigh<-icc(cbind(data$p_big_medium_1,data$p_big_medium_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_pmidhigh)
+
+icc_c1_pmidhigh<-icc(cbind(data$p_big_medium_1,data$p_big_medium_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_pmidhigh)
+```
+
+Create plot
+
+```{r}
+summary_coefs<-data.frame(
+  task=c('gng','gng','gng','gng','ambiguous'),
+  measure=c('gtw','ngtw','gta','ngta','pmidhigh'),
+  corr_coef=c(cor_gtw$estimate,cor_ngtw$estimate,cor_gta$estimate,cor_ngta$estimate,cor_pmidhigh$estimate),
+  corr_p=c(cor_gtw$p.value,cor_ngtw$p.value,cor_gta$p.value,cor_ngta$p.value,cor_pmidhigh$p.value),
+  corr_lb=c(cor_gtw$conf.int[1],cor_ngtw$conf.int[1],cor_gta$conf.int[1],cor_ngta$conf.int[1],cor_pmidhigh$conf.int[1]),
+  corr_ub=c(cor_gtw$conf.int[2],cor_ngtw$conf.int[2],cor_gta$conf.int[2],cor_ngta$conf.int[2],cor_pmidhigh$conf.int[2]),
+  icc.a1_coef=c(icc_a1_gtw$value,icc_a1_ngtw$value,icc_a1_gta$value,icc_a1_ngta$value,icc_a1_pmidhigh$value),
+  icc.a1_p=c(icc_a1_gtw$p.value,icc_a1_ngtw$p.value,icc_a1_gta$p.value,icc_a1_ngta$p.value,icc_a1_pmidhigh$p.value),
+  icc.a1_lb=c(icc_a1_gtw$lbound,icc_a1_ngtw$lbound,icc_a1_gta$lbound,icc_a1_ngta$lbound,icc_a1_pmidhigh$lbound),
+  icc.a1_ub=c(icc_a1_gtw$ubound,icc_a1_ngtw$ubound,icc_a1_gta$ubound,icc_a1_ngta$ubound,icc_a1_pmidhigh$ubound),
+  icc.c1_coef=c(icc_c1_gtw$value,icc_c1_ngtw$value,icc_c1_gta$value,icc_c1_ngta$value,icc_c1_pmidhigh$value),
+  icc.c1_p=c(icc_c1_gtw$p.value,icc_c1_ngtw$p.value,icc_c1_gta$p.value,icc_c1_ngta$p.value,icc_c1_pmidhigh$p.value),
+  icc.c1_lb=c(icc_c1_gtw$lbound,icc_c1_ngtw$lbound,icc_c1_gta$lbound,icc_c1_ngta$lbound,icc_c1_pmidhigh$lbound),
+  icc.c1_ub=c(icc_c1_gtw$ubound,icc_c1_ngtw$ubound,icc_c1_gta$ubound,icc_c1_ngta$ubound,icc_c1_pmidhigh$ubound)
+)
+
+summary_coefs<-summary_coefs%>%
+  pivot_longer(cols = -c(task,measure))%>%
+  separate(col = name, into=c('analysis','number'), sep = '_')%>%
+  pivot_wider(names_from=number,values_from=value)
+
+ggplot(summary_coefs,aes(x=measure,y=coef,colour=analysis,group=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Measure',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Go to avoid','Go to win','No-go to avoid', 'No-go to win','P(high|mid)'))+
+  scale_colour_discrete(labels=c('Pearsons correlation','ICC(A,1)','ICC(C,1)'))+
+  geom_vline(aes(xintercept=4.5),linetype='dashed')+
+  geom_hline(yintercept=0,linetype='dotted')+
+  geom_hline(yintercept=0.4,linetype='dotdash')
+
+
+ggsave(filename=paste0(workingdir,'figures/summary_stats.png'),width=10,height=6,scale=0.8)
+
+```
+
+
+GNG model comparison
+```{r}
+source(paste0(workingdir,'model_selection.R'))
+
+model_list<-read.csv('model_details.csv')
+model_list<-model_list
+
+times<-c(1:2)
+
+ibics<-list()
+bics<-list()
+looic<-list()
+
+
+for (time in times){
+  temp_list<-paste0('gng_',times[time],'_',substr(model_list$Model_name,6,7),'.RData')
+  temp<-mapply(model_selection, temp_list, ntrials=160, nparam=model_list$Parameters,llname='log_lik',workingdir=workingdir)
+  ibics[[time]]<-temp[1,]
+  bics[[time]]<-temp[2,]
+  looic[[time]]<-temp[3,]
+}
+
+ibics_df<-data.frame(do.call(rbind,ibics))%>%
+  setNames(model_list$Model_name)%>%
+  mutate(time=times)%>%
+  pivot_longer(cols=contains('_'),names_to='model',values_to='ibic')
+
+looic_df<-data.frame(do.call(rbind,looic))%>%
+  setNames(model_list$Model_name)%>%
+  mutate(time=times)%>%
+  pivot_longer(cols=contains('_'),names_to='model',values_to='looic')
+
+
+bics_df<-data.frame(do.call(rbind,bics))%>%
+  setNames(model_list$Model_name)%>%
+  mutate(time=times)%>%
+  pivot_longer(cols=contains('_'),names_to='model',values_to='bic')
+```
+Get best model for time 1
+
+```{r}
+bics_df$bic<-as.numeric(bics_df$bic)
+
+bics_t1<-bics_df%>%
+  filter(time==1)%>%
+  group_by(model)%>%
+  summarize(total=sum(bic))%>%
+  mutate(model=factor(model,ordered=TRUE,levels=c(model_list$Model_name)))
+
+bics_t1%>%
+  arrange(total)%>%
+  mutate(bayesfactor = exp((total - lag(total, default = total[1]))/2))
+
+bic_t1_plot<-ggplot(bics_t1,aes(x=model,y=total,fill=model))+
+  stat_summary(geom='bar',fun='sum')+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position = 'none', axis.title.x=element_blank())+
+  geom_text(data = bics_t1[which.min(bics_t1$total),], label = "*", nudge_y=20)+
+  labs(y='total integrated BIC')
+bic_t1_plot
+
+ggsave(filename=paste0(workingdir,'/figures/bics_t1.png'),bic_t1_plot,width=10,height=8,scale=0.7)
+```
+And the best model for time 2
+```{r}
+bics_df$bic<-as.numeric(bics_df$bic)
+
+bics_t2<-bics_df%>%
+  filter(time==2)%>%
+  group_by(model)%>%
+  summarize(total=sum(bic))%>%
+  mutate(model=factor(model,ordered=TRUE,levels=c(model_list$Model_name)))
+
+bics_t2%>%
+  arrange(total)%>%
+  mutate(bayesfactor = exp((total - lag(total, default = total[1]))/2))
+
+bic_t2_plot<-ggplot(bics_t2,aes(x=model,y=total,fill=model))+
+  stat_summary(geom='bar',fun='sum')+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),legend.position = 'none', axis.title.x=element_blank())+
+  geom_text(data = bics_t2[which.min(bics_t2$total),], label = "*", nudge_y=20)+
+  labs(y='total integrated BIC')
+bic_t2_plot
+
+ggsave(filename=paste0(workingdir,'/figures/bics_t2.png'),bic_t2_plot,width=10,height=8,scale=0.7)
+```
+Combine
+
+```{r}
+bic_t1_plot + bic_t2_plot + plot_annotation(tag_levels='a')
+
+ggsave(filename = paste0(workingdir,'/figures/bics_plot.png'),width=8,height=5)
+```
+
+
+Get parameters and join to main dataset
+
+```{r}
+model=5
+
+temp<-list()
+
+prefixes<-c('gng_1_',
+            'gng_2_')
+
+temp_list<-paste0(prefixes,model)
+
+for (prefix in 1:length(prefixes)){
+  name<-load(paste0(temp_list[[prefix]],'.RData'))
+  temp[[prefix]]<-get(name)$allIndPars
+}
+
+data_modelling<-data%>%
+  inner_join(temp[[1]],by=c('id'='subjID'),suffix=c('','_1'))%>%
+  inner_join(temp[[2]],by=c('id'='subjID'),suffix=c('','_2'))%>%
+  rename('gobias'='b')%>%
+  rename('gobias_2'='b_2')
+
+```
+
+Correlate parameters at t1 and t2
+
+```{r}
+data_corr<-
+  inner_join(temp[[1]],temp[[2]],by='subjID',suffix=c('_1','_2'))%>%
+  pivot_longer(cols=-c('subjID'))%>%
+  separate(name,into=c('parameter','time'))
+
+data_corr<-data.frame(cor(temp[[1]]%>%select(-'subjID'),temp[[2]]%>%select(-'subjID')))%>%
+  rownames_to_column(var='time1')%>%
+  pivot_longer(cols=-c('time1'),names_to = c('time2'))%>%
+  mutate(time1=as_factor(time1))%>%
+  mutate(time2=as_factor(time2))
+
+ggplot(data=data_corr,aes(x=time1,y=time2))+
+  geom_tile(aes(fill=value))+
+  geom_text(aes(time1, time2, label = round(value,2)), color = "black")+
+  coord_equal()+
+  scale_fill_gradient2(low='navy',mid='white',high='firebrick1',midpoint=0,limits=c(-1,1))+
+  labs(x= "time1", y = "time2", fill = "Correlation Coefficient")+
+  theme(panel.background = element_blank(), axis.ticks = element_blank())+
+  scale_x_discrete(position = "top") +
+  scale_y_discrete(limits = rev(levels(data_corr$time2)))
+
+ggsave(filename=paste0(workingdir,'figures/gng_m5_cormatrix.png'),width=10,height=10,scale=0.8)
+
+gng_coefs<-temp[[1]]%>%
+  bind_rows(temp[[2]],.id='time')%>%
+  mutate(time=as.numeric(time))%>%
+  summarise(across(-c(subjID,time), list(corr_coef=function(x) cor.test(x[time==1],x[time==2])$estimate,
+                                         corr_p=function(x) cor.test(x[time==1],x[time==2])$p.value,
+                                         corr_lb=function(x) cor.test(x[time==1],x[time==2])$conf.int[1],
+                                         corr_ub=function(x) cor.test(x[time==1],x[time==2])$conf.int[2],
+                                         icc.a1_coef=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                     model = "twoway",
+                                                                     type = "agreement",
+                                                                     unit = "single",
+                                                                     r0=0,
+                                                                     conf.level = 0.95)$value,
+                                         icc.a1_p=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                  model = "twoway",
+                                                                  type = "agreement",
+                                                                  unit = "single",
+                                                                  r0=0,
+                                                                  conf.level = 0.95)$p.value,
+                                         icc.a1_lb=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "agreement",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$lb,
+                                         icc.a1_ub=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "agreement",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$ub,                            
+                                         icc.c1_coef=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                     model = "twoway",
+                                                                     type = "consistency",
+                                                                     unit = "single",
+                                                                     r0=0,
+                                                                     conf.level = 0.95)$value,
+                                         icc.c1_p=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                  model = "twoway",
+                                                                  type = "consistency",
+                                                                  unit = "single",
+                                                                  r0=0,
+                                                                  conf.level = 0.95)$p.value,
+                                         icc.c1_lb=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "consistency",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$lb,
+                                         icc.c1_ub=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "consistency",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$ub)))%>%
+  pivot_longer(cols=everything())%>%
+  separate(name,into=c('parameter','analysis','number'),sep='_')%>%
+  pivot_wider(names_from=number,values_from=value)
+                   
+gng<-ggplot(gng_coefs,aes(x=parameter,y=coef,colour=analysis,group=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Parameter',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Approach bias','Avoid bias','Go bias', 'Learning rate','Punishment sensitivity','Reward sensivitiy','Noise'))+
+  scale_colour_discrete(labels=c('Pearsons correlation','ICC(A,1)','ICC(C,1)'))
+
+ggsave(filename=paste0(workingdir,'figures/params_stats.png'),width=12,height=6,scale=0.8,gng)
+```
+*CIRCLES*
+
+EZDDM
+
+```{r}
+ezdm1<-ezddm(propCorrect = data$p_big_medium_1,rtCorrectVariance_seconds = data$rt_big_variance_1, rtCorrectMean_seconds = data$rt_big_mean_1, s=0.1, nTrials = 120)
+
+ezdm2<-ezddm(propCorrect = data$p_big_medium_2,rtCorrectVariance_seconds = data$rt_big_variance_2, rtCorrectMean_seconds = data$rt_big_mean_2, s=0.1, nTrials = 120)
+
+data_modelling<-data_modelling%>%
+  bind_cols(ezdm1)%>%
+  plyr::rename(c('a'='boundary_1','v'='drift_1','Ter'='nondecisiontime_1'))%>%
+  bind_cols(ezdm2)%>%
+  plyr::rename(c('a'='boundary_2','v'='drift_2','Ter'='nondecisiontime_2'))
+
+```
+
+Get ICCs for EZ-DDM
+
+```{r}
+#nondecision time
+cor_nondec<-cor.test(data_modelling$nondecisiontime_1,data_modelling$nondecisiontime_2)
+cor_nondec
+
+icc_a1_nondec<-icc(cbind(data_modelling$nondecisiontime_1,data_modelling$nondecisiontime_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_nondec)
+
+icc_c1_nondec<-icc(cbind(data_modelling$nondecisiontime_1,data_modelling$nondecisiontime_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_nondec)
+
+#drift rate
+cor_drift<-cor.test(data_modelling$drift_1,data_modelling$drift_2)
+cor_drift
+
+icc_a1_drift<-icc(cbind(data_modelling$drift_1,data_modelling$drift_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_drift)
+
+icc_c1_drift<-icc(cbind(data_modelling$drift_1,data_modelling$drift_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_drift)
+
+
+#boundary separation
+cor_boundary<-cor.test(data_modelling$boundary_1,data_modelling$boundary_2)
+cor_boundary
+
+icc_a1_boundary<-icc(cbind(data_modelling$boundary_1,data_modelling$boundary_2),model = "twoway",
+    type = "agreement",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_a1_boundary)
+
+icc_c1_boundary<-icc(cbind(data_modelling$boundary_1,data_modelling$boundary_2),model = "twoway",
+    type = "consistency",
+    unit = "single", 
+    r0 = 0,
+    conf.level = 0.95)
+print(icc_c1_boundary)
+
+```
+
+Create plots
+
+```{r}
+ezddm_coefs<-data.frame(
+  measure=c('nondecision','drift','boundary'),
+  corr_coef=c(cor_nondec$estimate,cor_drift$estimate,cor_boundary$estimate),
+  corr_p=c(cor_nondec$p.value,cor_drift$p.value,cor_boundary$p.value),
+  corr_lb=c(cor_nondec$conf.int[1],cor_drift$conf.int[1],cor_boundary$conf.int[1]),
+  corr_ub=c(cor_nondec$conf.int[2],cor_drift$conf.int[2],cor_boundary$conf.int[2]),
+  icc.a1_coef=c(icc_a1_nondec$value,icc_a1_drift$value,icc_a1_boundary$value),
+  icc.a1_p=c(icc_a1_nondec$p.value,icc_a1_drift$p.value,icc_a1_boundary$p.value),
+  icc.a1_lb=c(icc_a1_nondec$lbound,icc_a1_drift$lbound,icc_a1_boundary$lbound),
+  icc.a1_ub=c(icc_a1_nondec$ubound,icc_a1_drift$ubound,icc_a1_boundary$ubound),
+  icc.c1_coef=c(icc_c1_nondec$value,icc_c1_drift$value,icc_c1_boundary$value),
+  icc.c1_p=c(icc_c1_nondec$p.value,icc_c1_drift$p.value,icc_c1_boundary$p.value),
+  icc.c1_lb=c(icc_c1_nondec$lbound,icc_c1_drift$lbound,icc_c1_boundary$lbound),
+  icc.c1_ub=c(icc_c1_nondec$ubound,icc_c1_drift$ubound,icc_c1_boundary$ubound)
+)
+
+ezddm_coefs<-ezddm_coefs%>%
+  pivot_longer(cols = -c(measure))%>%
+  separate(col = name, into=c('analysis','number'), sep = '_')%>%
+  pivot_wider(names_from=number,values_from=value)
+
+ezddm_plot<-ggplot(ezddm_coefs,aes(x=measure,y=coef,colour=analysis,group=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Measure',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Boundary separation','Drift rate','Non-decision time'))+
+  scale_colour_discrete(labels=c('Pearsons correlation','ICC(A,1)','ICC(C,1)'))
+
+ggsave(filename=paste0(workingdir,'figures/ezddm_stats.png'),width=10,height=6,scale=0.8,ezddm_plot)
+
+```
+
+
+
+Check against full DDM
+
+Get parameters and join to main dataset
+
+```{r}
+temp<-list()
+
+prefixes<-c('ddm_1',
+            'ddm_2')
+
+temp_list<-paste0(prefixes)
+
+for (prefix in 1:length(prefixes)){
+  name<-load(paste0(temp_list[[prefix]],'.RData'))
+  temp[[prefix]]<-get(name)$allIndPars
+}
+
+data_modelling<-data_modelling%>%
+  mutate(id=as.numeric(substr(id,2,3)))%>% #to get model to run, had to remove 'P', so doing this so they match
+  inner_join(temp[[1]],by=c('id'='subjID'),suffix=c('','_1'))%>%
+  inner_join(temp[[2]],by=c('id'='subjID'),suffix=c('','_2'))%>%
+  mutate(id=paste0('P',id)) #adding 'P' back on to ids
+
+```
+
+Correlate parameters at t1 and t2
+
+```{r}
+data_corr<-data.frame(cor(temp[[1]]%>%filter(subjID %in% temp[[2]]$subjID)%>%select(-'subjID'),temp[[2]]%>%select(-'subjID')))%>%
+  rownames_to_column(var='time1')%>%
+  pivot_longer(cols=-c('time1'),names_to = c('time2'))%>%
+  mutate(time1=as_factor(time1))%>%
+  mutate(time2=as_factor(time2))
+
+ggplot(data=data_corr,aes(x=time1,y=time2))+
+  geom_tile(aes(fill=value))+
+  geom_text(aes(time1, time2, label = round(value,2)), color = "black")+
+  coord_equal()+
+  scale_fill_gradient2(low='navy',mid='white',high='firebrick1',midpoint=0,limits=c(-1,1))+
+  labs(x= "time1", y = "time2", fill = "Correlation Coefficient")+
+  theme(panel.background = element_blank(), axis.ticks = element_blank())+
+  scale_x_discrete(position = "top") +
+  scale_y_discrete(limits = rev(levels(data_corr$time2)))
+```
+Plot full DDM correlations
+```{r}
+temp[[1]]<-filter(temp[[1]],subjID %in% temp[[2]]$subjID)
+
+ddm_coefs<-temp[[1]]%>%
+  bind_rows(temp[[2]],.id='time')%>%
+  mutate(time=as.numeric(time))%>%
+  summarise(across(-c(subjID,time), list(corr_coef=function(x) cor.test(x[time==1],x[time==2])$estimate,
+                                         corr_p=function(x) cor.test(x[time==1],x[time==2])$p.value,
+                                         corr_lb=function(x) cor.test(x[time==1],x[time==2])$conf.int[1],
+                                         corr_ub=function(x) cor.test(x[time==1],x[time==2])$conf.int[2],
+                                         icc.a1_coef=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                     model = "twoway",
+                                                                     type = "agreement",
+                                                                     unit = "single",
+                                                                     r0=0,
+                                                                     conf.level = 0.95)$value,
+                                         icc.a1_p=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                  model = "twoway",
+                                                                  type = "agreement",
+                                                                  unit = "single",
+                                                                  r0=0,
+                                                                  conf.level = 0.95)$p.value,
+                                         icc.a1_lb=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "agreement",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$lb,
+                                         icc.a1_ub=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "agreement",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$ub,                            
+                                         icc.c1_coef=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                     model = "twoway",
+                                                                     type = "consistency",
+                                                                     unit = "single",
+                                                                     r0=0,
+                                                                     conf.level = 0.95)$value,
+                                         icc.c1_p=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                  model = "twoway",
+                                                                  type = "consistency",
+                                                                  unit = "single",
+                                                                  r0=0,
+                                                                  conf.level = 0.95)$p.value,
+                                         icc.c1_lb=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "consistency",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$lb,
+                                         icc.c1_ub=function(x) icc(cbind(x[time==1],x[time==2]),
+                                                                   model = "twoway",
+                                                                   type = "consistency",
+                                                                   unit = "single",
+                                                                   r0=0,
+                                                                   conf.level = 0.95)$ub)))%>%
+  pivot_longer(cols=everything())%>%
+  separate(name,into=c('parameter','analysis','number'),sep='_')%>%
+  pivot_wider(names_from=number,values_from=value)
+
+ddm<-ggplot(ddm_coefs,aes(x=parameter,y=coef,colour=analysis,group=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Parameter',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Boundary separation','Starting bias','Drift rate','Non-decision time'))+
+  scale_colour_discrete(labels=c('Pearsons correlation','ICC(A,1)','ICC(C,1)'))
+
+ddm
+ggsave(filename=paste0(workingdir,'figures/ddm_stats.png'),width=12,height=6,scale=0.8,ddm)
+
+```
+
+Combine figures for models
+```{r}
+(gng / ezddm_plot / ddm) * theme(axis.text.x = element_text(angle=45, hjust=1)) * geom_hline(yintercept = 0,linetype='dotted') * geom_hline(yintercept = 0.4, linetype='dotdash') * ylim(-0.45,0.75) + plot_annotation(tag_level = 'a') + plot_layout(guides='collect')
+ggsave(paste0(filename='figures/model_cors.png'),height=15,width=11,scale=0.8)
+```
+
+
+Check correlations between EZDDM and DDM parameters
+```{r}
+cor.test(data_modelling$tau,data_modelling$nondecisiontime_1)
+cor.test(data_modelling$tau_2,data_modelling$nondecisiontime_2)
+
+cor.test(data_modelling$alpha,data_modelling$boundary_1)
+cor.test(data_modelling$alpha_2,data_modelling$boundary_2)
+
+cor.test(data_modelling$beta,data_modelling$drift_1)
+cor.test(data_modelling$beta_2,data_modelling$drift_2)
+
+cor.test(data_modelling$delta,data_modelling$drift_1)
+cor.test(data_modelling$delta_2,data_modelling$drift_2)
+```
+Gng posterior prediction
+
+Get trialwise likelihoods for session 1 and session 2 and using parameters from other session to predict
+```{r}
+source(paste0(workingdir,'get_mean_trialwise_likelihood.R'))
+source(paste0(workingdir,'gng_m5_forward.R'))
+
+params<-c('ep','app','av','xi','gobias','rhoRew','rhoPun')
+
+#session 1 predicting session 1
+
+s1s1<-get_mean_trialwise_likelihood('gng',data_modelling,params,1,1)
+
+#session 2 predicting session 2
+
+s2s2<-get_mean_trialwise_likelihood('gng',data_modelling,params,2,2)
+
+#session 1 predicting session 2
+s1s2<-get_mean_trialwise_likelihood('gng',data_modelling,params,1,2)
+
+#session 2 predicting session 1
+s2s1<-get_mean_trialwise_likelihood('gng',data_modelling,params,2,1)
+
+#session 1 mean params predicting session 2
+s1means2<-get_mean_trialwise_likelihood('gng',data_modelling,params,1,2,mean_parameters = 1)
+
+#session 2 mean params predicting session 1
+s2means1<-get_mean_trialwise_likelihood('gng',data_modelling,params,2,1,mean_parameters = 1)
+```
+Plot
+
+```{r}
+trialwise_likelihoods<-data.frame(s1s1,s2s2,s1s2,s2s1,s1means2,s2means1)
+
+t.test(trialwise_likelihoods$s1s2,trialwise_likelihoods$s1means2,paired=TRUE)
+
+t.test(trialwise_likelihoods$s2s1,trialwise_likelihoods$s2means1,paired=TRUE)
+
+t.test(trialwise_likelihoods$s1s2,mu=0.5)
+t.test(trialwise_likelihoods$s2s1,mu=0.5)
+
+data_difference<-trialwise_likelihoods%>%
+  mutate(difference_session1params=s1s2-s1means2)%>%
+  mutate(difference_session2params=s2s1-s2means1)%>%
+  rownames_to_column(var='id')%>%
+  select(id,difference_session1params,difference_session2params)%>%
+  pivot_longer(cols=-c(id),names_to='metric',values_to = 'difference in trialwise likelihood')
+
+likelihood_diff_gng<-ggplot(data=data_difference,aes(x=metric,y=`difference in trialwise likelihood`,fill=metric))+
+  geom_boxplot()+
+  theme_classic()+
+  geom_hline(aes(yintercept=0),linetype='dashed')+
+  labs(y='difference in trialwise likelihood between \n indvidual parameters and mean parameters',title='Go-Nogo task')
+
+trialwise_likelihoods_plotting<-trialwise_likelihoods%>%
+  rownames_to_column(var='id')%>%
+  pivot_longer(cols=-c(id),names_to='metric',values_to='trialwise likelihood')
+
+prediction_gng<-ggplot(trialwise_likelihoods_plotting%>%filter(metric!='s1means2'&metric!='s2means1'),aes(x=metric,y=`trialwise likelihood`,fill=metric))+
+  geom_boxplot()+
+  theme_classic()+
+  geom_hline(aes(yintercept=0.5),linetype='dashed')+
+  labs(y='trialwise likelihood',title='Go-Nogo task')
+
+
+```
+
+
+Circles ddm
+
+Get trialwise likelihoods for session 1 and session 2 and using parameters from other session to predict
+```{r}
+source(paste0(workingdir,'get_mean_trialwise_likelihood.R'))
+source(paste0(workingdir,'ddm_forward.R'))
+
+params<-c('alpha','beta','tau','delta')
+
+#session 1 predicting session 1
+
+s1s1<-get_mean_trialwise_likelihood('ddm',data_modelling,params,1,1)
+
+#session 2 predicting session 2
+
+s2s2<-get_mean_trialwise_likelihood('ddm',data_modelling,params,2,2)
+
+#session 1 predicting session 2
+s1s2<-get_mean_trialwise_likelihood('ddm',data_modelling,params,1,2)
+
+#session 2 predicting session 1
+s2s1<-get_mean_trialwise_likelihood('ddm',data_modelling,params,2,1)
+
+#session 1 mean params predicting session 2
+s1means2<-get_mean_trialwise_likelihood('ddm',data_modelling,params,1,2,mean_parameters = 1)
+
+#session 2 mean params predicting session 1
+s2means1<-get_mean_trialwise_likelihood('ddm',data_modelling,params,2,1,mean_parameters = 1)
+```
+
+Plot
+
+```{r}
+trialwise_likelihoods<-data.frame(s1s1,s2s2,s1s2,s2s1,s1means2,s2means1)
+
+t.test(trialwise_likelihoods$s1s2,trialwise_likelihoods$s1means2,paired=TRUE)
+
+t.test(trialwise_likelihoods$s2s1,trialwise_likelihoods$s2means1,paired=TRUE)
+
+t.test(trialwise_likelihoods$s1s2,mu=0.5)
+t.test(trialwise_likelihoods$s2s1,mu=0.5)
+
+data_difference<-trialwise_likelihoods%>%
+  mutate(difference_session1params=s1s2-s1means2)%>%
+  mutate(difference_session2params=s2s1-s2means1)%>%
+  rownames_to_column(var='id')%>%
+  select(id,difference_session1params,difference_session2params)%>%
+  pivot_longer(cols=-c(id),names_to='metric',values_to = 'difference in trialwise likelihood')
+
+likelihood_diff_ddm<-ggplot(data=data_difference,aes(x=metric,y=`difference in trialwise likelihood`,fill=metric))+
+  geom_boxplot()+
+  theme_classic()+
+  geom_hline(aes(yintercept=0),linetype='dashed')+
+  labs(y='difference in trialwise likelihood between \n indvidual parameters and mean parameters',title='Ambiguous midpoint task')
+
+trialwise_likelihoods_plotting<-trialwise_likelihoods%>%
+  rownames_to_column(var='id')%>%
+  pivot_longer(cols=-c(id),names_to='metric',values_to='trialwise likelihood')
+
+prediction_ddm<-ggplot(trialwise_likelihoods_plotting%>%filter(metric!='s1means2'&metric!='s2means1'),aes(x=metric,y=`trialwise likelihood`,fill=metric))+
+  geom_boxplot()+
+  theme_classic()+
+  geom_hline(aes(yintercept=0.5),linetype='dashed')+
+  labs(y='trialwise likelihood',title='Ambiguous midpoint task')
+
+
+```
+Plot
+
+```{r}
+(prediction_gng + prediction_ddm)* theme(legend.position='none') * labs(x='Session')/ ((likelihood_diff_gng + likelihood_diff_ddm) * scale_x_discrete(labels=c('s1s2','s2s1')) * labs(x='Session') * theme(legend.position='none')) + plot_annotation(tag_level = 'a')
+ggsave(paste0(filename='figures/posterior_prediction.png'),height=8,width=11,scale=0.8)
+```
+
+
+Look at models with correlations embedded
+
+Gng
+
+```{r}
+fit<-readRDS(paste0(workingdir,'gng_m5_testretest.RDS'))
+
+parameters<-c('xi','ep','b','app','av','rhoRew','rhoPun')
+parameters_pr<-paste0(parameters,'_pr')
+
+into=c('parameter','id','time')
+#into=c('parameter',NA,'time','id')
+
+pars_testretest<-colMeans(colMeans(fit$draws(parameters)))%>%
+  data.frame()%>%
+  rownames_to_column(var='parameter')%>%
+  separate(col=parameter,into=into)%>%
+  rename(value='.')%>%
+  pivot_wider(names_from=c(time),values_from='value')
+
+correlations<-pars_testretest%>%
+  group_by(parameter)%>%
+  summarise(correlation=cor.test(`1`,`2`)$estimate,
+            lb=cor.test(`1`,`2`)$conf.int[1],
+            ub=cor.test(`1`,`2`)$conf.int[2],)
+
+correlations
+
+ggplot(pars_testretest,aes(x=`1`,y=`2`))+
+  geom_point()+
+  geom_smooth(method='lm')+
+  facet_wrap(facets='parameter',scales='free')
+
+into=c(NA,'parameter','time','id')
+corr_gng<-fit$summary(paste0('R_',parameters),'mean', ~quantile(.x, probs = c(0.05, 0.95)))%>%
+  data.frame()%>%
+  separate(col=variable,into=into)%>%
+  filter(time!=id&time==1)%>%
+  rename('correlation'='mean','lb'='X5.','ub'='X95.')
+
+corr_gng<-bind_rows(full=corr_gng,part=correlations,.id='analysis')%>%
+    bind_rows(gng_coefs%>%rename('correlation'='coef'))
+
+embed_gng<-ggplot(corr_gng[corr_gng$analysis=='full'|corr_gng$analysis=='corr',],aes(x=parameter,y=correlation,group=analysis,colour=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Measure',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Approach bias','Avoid bias','Go bias', 'Learning rate','Punishment sensitivity','Reward sensivitiy','Noise'))+
+  geom_hline(yintercept=0,linetype='dotted')+
+  geom_hline(yintercept=0.4,linetype='dotdash')
+
+ggsave(filename=paste0(workingdir,'figures/gng_embeddedcors.png'),width=10,height=6,scale=0.8,embed_gng)
+
+```
+
+Circles
+
+```{r}
+fit<-readRDS(paste0(workingdir,'choiceRT_ddm_testretest.RDS'))
+
+parameters<-c('alpha','beta','delta','tau')
+parameters_pr<-paste0(parameters,'_pr')
+
+into=c('parameter','id','time')
+#into=c('parameter',NA,'time','id')
+
+pars_testretest<-colMeans(colMeans(fit$draws(parameters)))%>%
+  data.frame()%>%
+  rownames_to_column(var='parameter')%>%
+  separate(col=parameter,into=into)%>%
+  rename(value='.')%>%
+  pivot_wider(names_from=c(time),values_from='value')
+
+correlations<-pars_testretest%>%
+  group_by(parameter)%>%
+  summarise(correlation=cor.test(`1`,`2`)$estimate,
+            lb=cor.test(`1`,`2`)$conf.int[1],
+            ub=cor.test(`1`,`2`)$conf.int[2],)
+
+correlations
+
+ggplot(pars_testretest,aes(x=`1`,y=`2`))+
+  geom_point()+
+  geom_smooth(method='lm')+
+  facet_wrap(facets='parameter',scales='free')
+
+into=c(NA,'parameter','time','id')
+corr_circles<-fit$summary(paste0('R_',parameters),'mean', ~quantile(.x, probs = c(0.05, 0.95)))%>%
+  data.frame()%>%
+  separate(col=variable,into=into)%>%
+  filter(time!=id&time==1)%>%
+  rename('correlation'='mean','lb'='X5.','ub'='X95.')
+
+corr_circles<-bind_rows(full=corr_circles,part=correlations,.id='analysis')%>%
+  bind_rows(ddm_coefs%>%rename('correlation'='coef'))
+
+embed_circles<-ggplot(corr_circles[corr_circles$analysis=='full'|corr_circles$analysis=='corr',],aes(x=parameter,y=correlation,colour=analysis,group=analysis))+
+  geom_errorbar(aes(ymin=lb,ymax=ub),position=position_dodge(0.5))+
+  geom_point(position=position_dodge(0.5))+
+  theme_minimal()+
+  labs(x='Measure',y='Estimate and 95% confidence interval',colour='Analysis')+
+  scale_x_discrete(labels=c('Boundary separation','Starting bias','Drift rate','Non-decision time'))+
+  geom_hline(yintercept=0,linetype='dotted')+
+  geom_hline(yintercept=0.4,linetype='dotdash')
+embed_circles
+
+ggsave(filename=paste0(workingdir,'figures/circles_embeddedcors.png'),width=10,height=6,scale=0.8)
+
+```
+Combine plots
+
+```{r}
+(embed_gng + embed_circles)* theme(axis.text.x = element_text(angle=45, hjust=1)) * geom_hline(yintercept = 0,linetype='dotted') * scale_colour_discrete(labels=c('Not-embedded','Embedded')) + plot_annotation(tag_level = 'a') + plot_layout(guides='collect')
+ggsave(paste0(filename='figures/embedded_cors.png'),height=8,width=11,scale=0.8)
+```
+
+
+How big would an effect have to be?
+
+```{r}
+n=10 #start at this number
+correlation=0.9
+effectsize=0.27
+
+pval=1 #initialises
+
+while (pval>0.05){
+  data<-rnorm_multi(n = n, 
+                    mu = c(0, 0),
+                    sd = c(1, 1),
+                    r = c(correlation), 
+                    varnames = c("A", "B"),
+                    empirical = TRUE)
+  
+  cor.test(data$A,data$B)
+  
+  data<-data%>%
+    mutate(B_shift=B+effectsize)
+  
+  cohen.d(data$A,data$B_shift)
+  cor.test(data$A,data$B_shift)
+  
+  pval=t.test(data$A,data$B_shift,paired=TRUE)$p.value
+
+  n=n+1
+}
+
+n
+```
+

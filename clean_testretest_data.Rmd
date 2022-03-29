@@ -1,0 +1,366 @@
+---
+title: "Test-retest data cleaning"
+output: html_notebook
+---
+
+Load in the relevant libraries
+
+```{r}
+library('tidyverse')
+
+workingdir='C:/Users/apike/OneDrive - University College London/Supervision/Katrina/open_data_and_code/'
+```
+
+Load in time 1 data and time 2 data
+
+```{r}
+codes<-t(data.frame('circles'='task-vpfw',
+            'gng'='task-rivr',
+            'prolific'='prolific',
+            'phq8'='questionnaire-oz31',
+            'gad7'='questionnaire-ncp8'))
+
+codes<-data.frame(measure=rownames(codes),value=codes,row.names=NULL)
+
+unused_cols<-c('Event Index','UTC Timestamp','UTC Date','Local Timestamp','Local Timezone','Local Date','Experiment ID','Tree Node Key','Repeat Key','Schedule ID','Participant Private ID','Participant Status','Participant Starting Group','Participant External Session ID','Participant Device Type','Participant Device', 'Participant OS','Participant Browser','Participant Monitor Size','Participant Viewport Size','Checkpoint','Participant Completion Code','Task Version','Task Name')#'Randomise questionnaire elements'
+
+
+for(code in 1:nrow(codes)){
+  files<-list.files(path=paste0(workingdir,'../raw_data/time1'),pattern = codes$value[code],full.names=TRUE)
+  assign(paste0(codes$measure[code],'_1'),read_csv(files))
+}
+
+for(code in 1:(nrow(codes)-2)){
+  files<-list.files(path=paste0(workingdir,'../raw_data/time2'),pattern = codes$value[code],full.names=TRUE)
+  assign(paste0(codes$measure[code],'_2'),read_csv(files))
+}
+
+
+```
+
+Check for incomplete participants
+
+```{r}
+sum(prolific_1$status=='TIMED-OUT')
+sum(prolific_2$status=='TIMED-OUT')
+sum(prolific_1$status=='RETURNED')
+sum(prolific_2$status=='RETURNED')
+sum(prolific_1$status=='REJECTED')
+sum(prolific_2$status=='REJECTED')
+
+withdrew1<-prolific_1$session_id[prolific_1$status=='TIMED-OUT'|prolific_1$status=='RETURNED'|prolific_1$status=='REJECTED']
+
+withdrew2<-prolific_2$session_id[prolific_2$status=='TIMED-OUT'|prolific_2$status=='RETURNED'|prolific_2$status=='REJECTED']
+```
+
+Now, remove the data from those who timed out or returned their submission
+```{r}
+circles_1<-circles_1%>%
+  filter(!`Participant External Session ID` %in% withdrew1)
+
+circles_2<-circles_2%>%
+  filter(!`Participant External Session ID` %in% withdrew2)
+
+gng_1<-gng_1%>%
+  filter(!`Participant External Session ID` %in% withdrew1)
+
+gng_2<-gng_2%>%
+  filter(!`Participant External Session ID` %in% withdrew2)
+```
+Create summary data for circles task at time 1 and time 2, and combine
+
+```{r}
+summary_circles_1<-circles_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  mutate(time1=format(as.Date(`Local Date`), '%y-%m-%d'))%>%
+  filter(`randomise_trials`>2)%>%
+  filter(`Screen Name`=='Screen 2')%>%
+  mutate(`Reaction Time`=`Reaction Time`/1000)%>%
+  group_by(id,age,prolific_score,Sex,time1)%>%
+  summarise(p_big_big=sum(Stimulus=='400x400.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='400x400.png',na.rm=TRUE),
+            p_big_small=sum(Stimulus=='200x200.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='200x200.png',na.rm=TRUE),
+            p_big_medium=sum(Stimulus=='300x300.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='300x300.png',na.rm=TRUE),
+            p_big=sum(Response=='m',na.rm=TRUE)/sum(!is.na(Response)),
+            p_nonrespond=sum(Response=='NoGo',na.rm=TRUE)/sum(!is.na(Response)),
+            rt_big_mean=mean(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']),
+            rt_big_variance=var(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']),
+            rt_max=max(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']))
+
+summary_circles_2<-circles_2%>%
+  inner_join(prolific_2,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  mutate(time2=format(as.Date(`Local Date`), '%y-%m-%d'))%>%
+  filter(`randomise_trials`>2)%>%
+  filter(`Screen Name`=='Screen 2')%>%
+  mutate(`Reaction Time`=`Reaction Time`/1000)%>%
+  group_by(id,time2)%>%
+  summarise(p_big_big=sum(Stimulus=='400x400.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='400x400.png',na.rm=TRUE),
+            p_big_small=sum(Stimulus=='200x200.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='200x200.png',na.rm=TRUE),
+            p_big_medium=sum(Stimulus=='300x300.png'&Response=='m',na.rm=TRUE)/sum(Stimulus=='300x300.png',na.rm=TRUE),
+            p_big=sum(Response=='m',na.rm=TRUE)/sum(!is.na(Response)),
+            p_nonrespond=sum(Response=='NoGo',na.rm=TRUE)/sum(!is.na(Response)),
+            rt_big_mean=mean(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']),
+            rt_big_variance=var(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']),
+            rt_max=max(`Reaction Time`[Stimulus=='300x300.png'&Response=='m']))
+
+circles_summary<-
+  inner_join(summary_circles_1,summary_circles_2,by='id',suffix=c('_1','_2'))%>%
+  mutate(gap=difftime(lubridate::dmy(time2),lubridate::dmy(time1)))
+
+```
+
+Get summary data of the gng task
+
+```{r}
+summary_gng_1<-gng_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  mutate(time1=format(as.Date(`Local Date`), '%y-%m-%d'))%>%
+  filter(`Screen Name`=='Screen 3')%>%
+  group_by(id,age,prolific_score,Sex,time1)%>%
+  summarise(gtw=sum(metadata=='Go to win'&Correct==1)/sum(metadata=='Go to win'),
+            ngtw=sum(metadata=='NoGo to win'&Response...36=='NoGo')/sum(metadata=='NoGo to win'),
+            gta=sum(metadata=='Go to avoid'&Correct==1)/sum(metadata=='Go to avoid'),
+            ngta=sum(metadata=='NoGo to avoid'&Response...36=='NoGo')/sum(metadata=='NoGo to avoid'),
+            nogo_prop=sum(Response...36=='NoGo')/length(Response...36))
+
+summary_gng_2<-gng_2%>%
+  inner_join(prolific_2,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  mutate(time2=format(as.Date(`Local Date`), '%y-%m-%d'))%>%
+  filter(`Screen Name`=='Screen 3')%>%
+  group_by(id,time2)%>%
+  summarise(gtw=sum(metadata=='Go to win'&Correct==1)/sum(metadata=='Go to win'),
+            ngtw=sum(metadata=='NoGo to win'&Response...36=='NoGo')/sum(metadata=='NoGo to win'),
+            gta=sum(metadata=='Go to avoid'&Correct==1)/sum(metadata=='Go to avoid'),
+            ngta=sum(metadata=='NoGo to avoid'&Response...36=='NoGo')/sum(metadata=='NoGo to avoid'),
+            nogo_prop=sum(Response...36=='NoGo')/length(Response...36))
+
+gng_summary<-
+  inner_join(summary_gng_1,summary_gng_2,by='id',suffix=c('_1','_2'))%>%
+  mutate(gap=difftime(lubridate::dmy(time2),lubridate::dmy(time1)))
+
+```
+Get data for modelling gng task
+```{r}
+modelling_gng_1<-gng_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  mutate(trial=as.numeric(`Trial Number`))%>%
+  rename('id'='participant_id')%>%
+  group_by(id,trial)%>%
+  select(id,display,Response...36,`Screen Name`,Stimulus,`0_Points`,`1_Points`,`2_points`)%>%
+  mutate(outcome=case_when(`Screen Name`=='True' ~ `1_Points`,
+                           `Screen Name`=='False' ~ `0_Points`,
+                           `Screen Name`=='NoGo' ~ `2_points`))%>%
+  summarise(cue=Stimulus[`Screen Name`=='Screen 3'],
+            keyPressed=Response...36[`Screen Name`=='Screen 3'],
+            outcome=outcome[`Screen Name`=='NoGo'|`Screen Name`=='True'|`Screen Name`=='False'])%>%
+  drop_na%>%
+  mutate(cue=recode(cue,'fractal1.jpg'=1,'fractal2.jpg'=2,'fractal3.jpg'=3,'fractal4.jpg'=4))%>%
+  mutate(outcome=recode(outcome,'+10 points'=1,'0 points'=0, '-10 points'=-1))%>%
+  mutate(keyPressed=recode(keyPressed, 'Left'=1, 'Right'=1, 'NoGo'=0))
+
+repeated_trials<-modelling_gng_1%>%
+  group_by(id,trial)%>%
+  select(trial)%>%
+  summarise(count=n())%>%
+  filter(count>1)%>%
+  select(id)%>%
+  distinct
+
+length(repeated_trials$id)
+
+modelling_gng_1<-modelling_gng_1%>%
+  filter(!(id %in% repeated_trials$id))
+
+
+#time 2
+modelling_gng_2<-gng_2%>%
+  inner_join(prolific_2,by=c('Participant External Session ID'='session_id'))%>%
+  mutate(trial=as.numeric(`Trial Number`))%>%
+  rename('id'='participant_id')%>%
+  group_by(id,trial)%>%
+  select(id,display,Response...36,`Screen Name`,Stimulus,`0_Points`,`1_Points`,`2_points`)%>%
+  mutate(outcome=case_when(`Screen Name`=='True' ~ `1_Points`,
+                           `Screen Name`=='False' ~ `0_Points`,
+                           `Screen Name`=='NoGo' ~ `2_points`))%>%
+  summarise(cue=Stimulus[`Screen Name`=='Screen 3'],
+            keyPressed=Response...36[`Screen Name`=='Screen 3'],
+            outcome=outcome[`Screen Name`=='NoGo'|`Screen Name`=='True'|`Screen Name`=='False'])%>%
+  drop_na%>%
+  mutate(cue=recode(cue,'fractal1.jpg'=1,'fractal2.jpg'=2,'fractal3.jpg'=3,'fractal4.jpg'=4))%>%
+  mutate(outcome=recode(outcome,'+10 points'=1,'0 points'=0, '-10 points'=-1))%>%
+  mutate(keyPressed=recode(keyPressed, 'Left'=1, 'Right'=1, 'NoGo'=0))
+
+repeated_trials<-modelling_gng_2%>%
+  group_by(id,trial)%>%
+  select(trial)%>%
+  summarise(count=n())%>%
+  filter(count>1)%>%
+  select(id)%>%
+  distinct
+
+length(repeated_trials$id)
+
+modelling_gng_2<-modelling_gng_2%>%
+  filter(!(id %in% repeated_trials$id))
+```
+Get data for modelling circles task
+
+```{r}
+modelling_circles_1<-circles_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  mutate(trial=as.numeric(`Trial Number`))%>%
+  rename('id'='participant_id')%>%
+  mutate(`Reaction Time`=`Reaction Time`/1000)%>%
+  group_by(id,trial)%>%
+  select(id,Response,`Screen Name`,`Reaction Time`,Stimulus)%>%
+  summarise(choice=Response[`Screen Name`=='Screen 2'&Stimulus=='300x300.png'],
+            RT=`Reaction Time`[`Screen Name`=='Screen 2'&Stimulus=='300x300.png'])%>%
+  drop_na%>%
+  mutate(choice=recode(choice,'m'=1,'z'=2,'NoGo'=3))%>%
+  filter(choice!=3)%>%
+  filter(RT>0.1)
+
+
+repeated_trials<-modelling_circles_1%>% #removes people who have refreshed
+  group_by(id,trial)%>%
+  select(trial)%>%
+  summarise(count=n())%>%
+  filter(count>1)%>%
+  select(id)%>%
+  distinct
+
+length(repeated_trials$id)
+
+
+if (length(repeated_trials$id>0)){
+  modelling_circles_1<-modelling_circles_1%>%
+    filter(!(id %in% repeated_trials$id))
+}
+
+
+#time 2
+modelling_circles_2<-circles_2%>%
+  inner_join(prolific_2,by=c('Participant External Session ID'='session_id'))%>%
+  mutate(trial=as.numeric(`Trial Number`))%>%
+  rename('id'='participant_id')%>%
+  mutate(`Reaction Time`=`Reaction Time`/1000)%>%
+  group_by(id,trial)%>%
+  select(id,Response,`Screen Name`,`Reaction Time`,Stimulus)%>%
+  summarise(choice=Response[`Screen Name`=='Screen 2'&Stimulus=='300x300.png'],
+            RT=`Reaction Time`[`Screen Name`=='Screen 2'&Stimulus=='300x300.png'])%>%
+  drop_na%>%
+  mutate(choice=recode(choice,'m'=1,'z'=2,'NoGo'=3))%>%
+  filter(choice!=3)%>%
+  filter(RT>0.1)
+
+
+repeated_trials<-modelling_circles_2%>% #removes people who have refreshed
+  group_by(id,trial)%>%
+  select(trial)%>%
+  summarise(count=n())%>%
+  filter(count>1)%>%
+  select(id)%>%
+  distinct
+
+length(repeated_trials$id)
+
+if (length(repeated_trials$id>0)){
+  modelling_circles_2<-modelling_circles_2%>%
+    filter(!(id %in% repeated_trials$id))
+}
+
+```
+
+
+Score questionnaires
+
+```{r}
+phq8<-phq8_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  filter(str_detect(`Question Key`,'quantised'))%>%
+  group_by(id)%>%
+  summarise(phq8_score=sum(as.numeric(Response)-1))
+
+gad7<-gad7_1%>%
+  inner_join(prolific_1,by=c('Participant External Session ID'='session_id'))%>%
+  rename('id'='participant_id')%>%
+  filter(str_detect(`Question Key`,'quantised'))%>%
+  filter(!str_detect(`Question Key`,'response-9'))%>% #removes difficulty question
+  group_by(id)%>%
+  summarise(gad7_score=sum(as.numeric(Response)-1))
+```
+
+
+Combine data
+
+```{r}
+overall_data<-
+  inner_join(circles_summary,gng_summary)%>%
+  ungroup%>%
+  inner_join(phq8)%>%
+  inner_join(gad7)
+
+#remove bad session 2
+
+overall_data<-overall_data%>%
+  filter(gtw_2!=0&p_nonrespond_2!=1&p_nonrespond_1!=1&p_big_big_2!=p_big_small_2)%>%
+  filter(id %in% modelling_gng_2$id)
+
+#remove ids
+
+id_codes<-overall_data%>%
+  select(id)%>%
+  mutate(anonymous_id=paste0('P',1:length(unique(id))))
+write_csv(id_codes,file = paste0(workingdir,'../raw_data/id_codes.csv'))
+
+overall_data<-id_codes%>%
+  inner_join(overall_data)%>%
+  select(-`id`)%>%
+  rename('id'='anonymous_id')
+
+write_csv(overall_data,file = paste0(workingdir,'dataset.csv'))
+
+#save modelling files too: gng
+
+modelling_gng_1<-id_codes%>%
+  inner_join(modelling_gng_1)%>%
+  select(-`id`)%>%
+  rename('subjID'='anonymous_id')
+
+write_tsv(modelling_gng_1,file=paste0(workingdir,'modelling_gng_1.txt'))
+
+
+modelling_gng_2<-id_codes%>%
+  inner_join(modelling_gng_2)%>%
+  select(-`id`)%>%
+  rename('subjID'='anonymous_id')
+
+
+write_tsv(modelling_gng_2,file=paste0(workingdir,'modelling_gng_2.txt'))
+
+#circles
+
+modelling_circles_1<-id_codes%>%
+  inner_join(modelling_circles_1)%>%
+  select(-`id`)%>%
+  rename('subjID'='anonymous_id')%>%
+  mutate(subjID=as.numeric(as.character(substr(subjID,2,4))))
+
+write_tsv(modelling_circles_1,file=paste0(workingdir,'modelling_circles_1.txt'))
+
+
+modelling_circles_2<-id_codes%>%
+  inner_join(modelling_circles_2)%>%
+  select(-`id`)%>%
+  rename('subjID'='anonymous_id')%>%
+  mutate(subjID=as.numeric(as.character(substr(subjID,2,4))))
+
+write_tsv(modelling_circles_2,file=paste0(workingdir,'modelling_circles_2.txt'))
+
+```
+
+NB: Initially excluded those who didn't respond at all with the 'm' key, or whose go to win was 0
